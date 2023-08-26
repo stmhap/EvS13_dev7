@@ -30,6 +30,7 @@ class Yolo3_PL_Model(LightningModule):
                 * torch.tensor(config.S).unsqueeze(1).unsqueeze(1).repeat(1, 3, 2)
             ).to(config.DEVICE)
         self.train_step_outputs = []
+        self.val_step_outputs = []
 
     def forward(self, x):
         return self.network_architecture(x)
@@ -53,7 +54,8 @@ class Yolo3_PL_Model(LightningModule):
         loss = self.loss_criterion(out, y, self.scaled_anchors)
         del out, x, y
 
-        self.log(f"val_loss", loss, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f"val_loss", loss, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.val_step_outputs.append(loss)
         return loss
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
@@ -185,6 +187,15 @@ class Yolo3_PL_Model(LightningModule):
                                     )
             print(f"MAP:{mapval.item()}")
             self.network_architecture.train()                                                                                                          
+
+        if self.collect_garbage == 'epoch':
+            garbage_collection_cuda()
+
+    def on_validation_epoch_end(self):
+        val_epoch_average = torch.stack(self.val_step_outputs).mean()
+        self.val_step_outputs.clear()
+        print(f"Val loss {val_epoch_average}")
+
 
         if self.collect_garbage == 'epoch':
             garbage_collection_cuda()
